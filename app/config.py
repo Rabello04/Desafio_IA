@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-3.8-flash"
+    GEMINI_MODEL: str = "gemini-3.1-flash-lite"
     GEMINI_FILE_SEARCH_STORE_NAME: str = ""
 
     APP_NAME: str = "Getnet Multi-Agent"
