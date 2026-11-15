@@ -1,0 +1,15 @@
+
+fastapi
+uvicorn[standard]
+google-genai
+langgraph
+pydantic
+pydantic-settings
+tavily-python
+requests
+beautifulsoup4
+python-dotenv
+
+# Testes
+pytest
+httpx
