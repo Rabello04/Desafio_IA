@@ -397,7 +397,54 @@ Os testes de integração utilizam mocks para validar o fluxo de orquestração 
 - Separação entre frontend, API, agentes e camada de dados.
 - Testes automatizados para validação dos principais componentes.
 
-## 13. Considerações finais
+## 13. Avaliação, observabilidade e monitoramento
+
+A qualidade do sistema multiagente deve ser acompanhada por meio de testes automatizados, avaliações periódicas das respostas e monitoramento do comportamento dos agentes.
+
+### Critérios de avaliação
+
+Os principais critérios considerados para avaliar o sistema são:
+
+- **Precisão do roteamento:** verificar se o Router Agent direciona cada solicitação ao agente adequado.
+- **Relevância das respostas:** avaliar se as respostas atendem à intenção e à necessidade apresentada pelo usuário.
+- **Fidelidade ao contexto RAG:** verificar se as respostas sobre produtos e serviços da Getnet estão fundamentadas nas informações recuperadas.
+- **Uso correto de ferramentas:** validar se as ferramentas de consulta de vendas e recebimentos são acionadas quando necessário e retornam informações coerentes.
+- **Tratamento de falhas:** observar o comportamento do sistema diante de erros, ausência de dados ou indisponibilidade de serviços externos.
+- **Encaminhamento humano:** verificar se solicitações de atendimento humano são identificadas corretamente.
+
+### Estratégia de testes e avaliação
+
+Além dos testes automatizados implementados com Pytest, recomenda-se manter um conjunto de perguntas representativas para avaliar periodicamente o comportamento do sistema.
+
+Esse conjunto pode incluir perguntas sobre produtos e serviços Getnet, vendas e recebimentos, dúvidas gerais que exijam pesquisa externa, solicitações ambíguas e pedidos de atendimento humano.
+
+Os resultados podem ser comparados ao longo das alterações no projeto, permitindo identificar regressões no roteamento, na recuperação de informações e na execução das ferramentas.
+
+### Observabilidade em produção
+
+Em um ambiente de produção, recomenda-se utilizar logs estruturados para acompanhar cada interação. Entre os dados úteis para diagnóstico estão:
+
+- Identificador da requisição.
+- Identificador do usuário, respeitando os cuidados de privacidade.
+- Intenção identificada e agente acionado.
+- Ferramentas executadas e seus respectivos resultados.
+- Tempo de resposta da requisição e dos serviços externos.
+- Status da execução, erros e ocorrências de fallback.
+- Identificação de solicitações de encaminhamento humano.
+
+### Indicadores de monitoramento
+
+A partir desses registros, podem ser acompanhados indicadores como volume de interações, distribuição de intenções, frequência de acionamento de cada agente, taxa de sucesso das ferramentas, latência, quantidade de erros, ocorrências de fallback e solicitações de atendimento humano.
+
+Também é recomendável acompanhar a disponibilidade da API e dos serviços externos utilizados, além de configurar alertas para falhas recorrentes ou aumento anormal do tempo de resposta.
+
+### Escopo atual e evolução
+
+O projeto já conta com testes automatizados, validações, guardrails e tratamento de erros para os principais fluxos. Entretanto, a instrumentação completa de métricas, traces distribuídos, alertas e dashboards operacionais não faz parte da implementação atual.
+
+Os critérios, indicadores e práticas descritos nesta seção representam uma estratégia de avaliação e observabilidade para orientar a evolução e a operação do sistema em um ambiente real.
+
+## 14. Considerações finais
 
 O Getnet Multi-Agent Support System demonstra a aplicação de arquitetura multiagente em um cenário de atendimento, combinando classificação de intenções, recuperação de conhecimento, ferramentas de consulta de dados e exposição de funcionalidades por meio de uma API REST.
 
