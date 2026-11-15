@@ -254,17 +254,74 @@ Instalar as dependências:
 npm install
 ```
 
-## 7. Ingestão da base de conhecimento
+## 7. Pipeline RAG — ingestão, armazenamento, recuperação e geração
 
-Para indexar os documentos utilizados pelo Knowledge Agent no Gemini File Search, execute na raiz do projeto:
+O Knowledge Agent utiliza Retrieval-Augmented Generation (RAG) para responder perguntas sobre produtos, serviços e soluções da Getnet com apoio de conteúdo obtido em páginas oficiais. O pipeline está dividido em quatro etapas.
+
+### 7.1. Ingestão das fontes
+
+As fontes são definidas em `scripts/ingest_knowledge.py`. Atualmente, o projeto utiliza oito páginas:
+
+- [Todas as maquininhas](https://site.getnet.com.br/todas-as-maquininhas/)
+- [Get Lite](https://site.getnet.com.br/get-lite/)
+- [Get Clássica](https://site.getnet.com.br/maquininha/get-classica/)
+- [Get Smart](https://site.getnet.com.br/maquininha/get-smart/)
+- [Taxas](https://site.getnet.com.br/taxas/)
+- [Get Tap](https://site.getnet.com.br/get-tap/)
+- [Get Ajuda](https://site.getnet.com.br/get-ajuda/)
+- [Getnet — site institucional global](https://www.getnet.net/en/)
+
+O componente `KnowledgeIngestion`, em `app/rag/ingestion.py`, acessa cada URL com `requests` e processa o HTML com BeautifulSoup. Elementos que não fazem parte do conteúdo principal, como scripts, estilos, navegação, cabeçalho, rodapé e SVGs, são removidos. Em seguida, o extrator prioriza o conteúdo das tags `main` ou `article`, utilizando o corpo da página como alternativa.
+
+### 7.2. Preparação e armazenamento
+
+O texto extraído é salvo localmente em `data/knowledge_sources/`, em arquivos `.txt` que incluem a URL de origem e o conteúdo textual. O nome dos arquivos utiliza hashes derivados da URL e do conteúdo.
+
+Cada fonte também recebe metadados, como:
+
+- URL de origem (`source_url`).
+- Público-alvo (`audience`).
+- Categoria do conteúdo (`category`).
+- Tipo da fonte (`source_type`).
+- País ou abrangência (`country`).
+
+Depois da preparação, os arquivos são enviados ao Gemini File Search. O serviço utiliza o `GEMINI_FILE_SEARCH_STORE_NAME` configurado no ambiente. Caso o nome do armazenamento não esteja configurado, o código cria um File Search Store chamado `Getnet Knowledge Base` e informa o identificador que deve ser adicionado ao `.env`.
+
+O Gemini File Search é responsável pelo processamento e pela indexação dos documentos no armazenamento. O projeto não implementa manualmente uma base vetorial ou uma rotina própria de divisão em chunks. Durante o envio, a aplicação acompanha a operação até a conclusão e sinaliza eventuais erros de indexação.
+
+### 7.3. Recuperação de informações
+
+Quando recebe uma pergunta relacionada ao conhecimento da Getnet, o Knowledge Agent utiliza o Gemini File Search para localizar conteúdo relevante no armazenamento previamente indexado. Assim, a resposta pode ser baseada nas informações recuperadas das fontes, em vez de depender exclusivamente do conhecimento geral do modelo.
+
+A recuperação depende de o armazenamento estar configurado e de os documentos terem sido ingeridos e indexados anteriormente.
+
+### 7.4. Geração da resposta
+
+Com o contexto recuperado, o Knowledge Agent utiliza o modelo Gemini para formular uma resposta em linguagem natural. O objetivo é responder à solicitação com base nas informações disponíveis na base de conhecimento.
+
+O projeto também disponibiliza a pesquisa externa por meio da Tavily Search API para perguntas gerais que necessitam de consulta à web. Essa pesquisa é uma ferramenta complementar do agente e não deve ser confundida com a ingestão das páginas da Getnet no armazenamento RAG.
+
+### 7.5. Executar a ingestão
+
+Com as credenciais do Gemini configuradas no `.env`, execute na raiz do projeto:
 
 ```powershell
 python scripts/ingest_knowledge.py
 ```
 
-A ingestão permite que o agente recupere informações da base de conhecimento antes de recorrer à pesquisa externa.
+O script percorre as URLs configuradas, extrai o conteúdo, prepara os arquivos e os envia ao Gemini File Search. Ao final, apresenta um resumo com a quantidade de fontes processadas e as que apresentaram erro.
 
-Essa etapa depende da configuração correta das credenciais e do armazenamento do Gemini File Search.
+As variáveis relacionadas ao Gemini são:
+
+```env
+GEMINI_API_KEY=sua_chave_gemini
+GEMINI_MODEL=seu_modelo_gemini
+GEMINI_FILE_SEARCH_STORE_NAME=seu_store_name
+```
+
+A primeira execução pode criar o File Search Store quando `GEMINI_FILE_SEARCH_STORE_NAME` estiver vazio. Nesse caso, copie o identificador apresentado no terminal para o `.env` e mantenha-o nas próximas execuções para reutilizar o mesmo armazenamento.
+
+Execute novamente a ingestão quando quiser atualizar o conteúdo indexado a partir das páginas configuradas. A disponibilidade das fontes depende dos respectivos sites e das credenciais dos serviços externos.
 
 ## 8. Executando a aplicação
 
