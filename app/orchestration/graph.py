@@ -32,15 +32,33 @@ def should_handoff(state: AgentState) -> str:
         "falar com atendente",
         "falar com um atendente",
         "falar com uma pessoa",
+        "falar com humano",
+        "falar com um humano",
+        "falar com uma pessoa real",
         "atendimento humano",
         "atendente humano",
         "quero um atendente",
         "quero falar com humano",
         "quero falar com uma pessoa",
+        "quero falar com um humano",
+        "preciso de um atendente",
+        "preciso falar com atendente",
+        "preciso falar com uma pessoa",
         "transferir para atendente",
+        "transferir para um humano",
         "me transfira",
+        "me passa para um atendente",
+        "me passe para um atendente",
         "falar com alguem",
         "pessoa real",
+        "nao quero falar com robo",
+        "nao quero falar com bot",
+        "quero ser atendido por uma pessoa",
+        "chamar atendente",
+        "chamar um atendente",
+        "chame um atendente",
+        "quero atendimento de uma pessoa",
+        "quero atendimento humano",
     ]
 
     if any(phrase in message for phrase in handoff_phrases):
@@ -49,8 +67,21 @@ def should_handoff(state: AgentState) -> str:
     return "router"
 
 
+def _sum_token_usage(current: dict | None, additional: dict | None) -> dict:
+    current = current or {}
+    additional = additional or {}
+    return {
+        "input_tokens": int(current.get("input_tokens", 0) or 0)
+        + int(additional.get("input_tokens", 0) or 0),
+        "output_tokens": int(current.get("output_tokens", 0) or 0)
+        + int(additional.get("output_tokens", 0) or 0),
+        "total_tokens": int(current.get("total_tokens", 0) or 0)
+        + int(additional.get("total_tokens", 0) or 0),
+    }
+
+
 def router_node(state: AgentState) -> dict:
-    """Classifica a mensagem e registra a decisão."""
+    """Classifica a mensagem e registra a decisão e o consumo do Router."""
 
     router = RouterAgent()
     decision = router.route(state["message"])
@@ -59,6 +90,9 @@ def router_node(state: AgentState) -> dict:
         "intent": decision.intent,
         "target_agent": decision.target_agent,
         "confidence": decision.confidence,
+        "token_usage": _sum_token_usage(
+            state.get("token_usage"), router.last_token_usage
+        ),
     }
 
 
@@ -82,13 +116,19 @@ def route_next(state: AgentState) -> str:
 def knowledge_node(state: AgentState) -> dict:
     """Executa o agente de conhecimento."""
 
-    result = KnowledgeAgent().run(state["message"])
+    result = KnowledgeAgent().run(
+        message=state["message"],
+        intent=state.get("intent"),
+    )
 
     return {
         "response": result.get("response", ""),
         "status": result.get("status", "success"),
         "tools_used": result.get("tools_used", []),
         "sources": result.get("sources", []),
+        "token_usage": _sum_token_usage(
+            state.get("token_usage"), result.get("token_usage")
+        ),
         **(
             {"error": result["error"]}
             if result.get("error")
@@ -112,6 +152,9 @@ def customer_support_node(state: AgentState) -> dict:
         "status": result.get("status", "success"),
         "tools_used": result.get("tools_used", []),
         "sources": result.get("sources", []),
+        "token_usage": _sum_token_usage(
+            state.get("token_usage"), result.get("token_usage")
+        ),
         **(
             {"error": result["error"]}
             if result.get("error")
@@ -121,14 +164,13 @@ def customer_support_node(state: AgentState) -> dict:
 
 
 def human_handoff_node(state: AgentState) -> dict:
-    """Sinaliza que a solicitação precisa de atendimento humano."""
+    """Simula o encaminhamento para atendimento humano."""
 
     return {
         "response": (
-            "Entendi que você deseja falar com um atendente humano. "
-            "Sua solicitação foi identificada para encaminhamento. "
-            "No momento, este canal ainda não está conectado "
-            "a uma fila de atendimento humano."
+            "Entendi! Você deseja falar com um de nossos atendentes. "
+            "Estou encaminhando sua solicitação para nossa equipe de "
+            "atendimento humano. Por favor, aguarde um instante. "
         ),
         "status": "handoff_required",
         "target_agent": "human_handoff",

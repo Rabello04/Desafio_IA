@@ -2,7 +2,7 @@
 
 Sistema inteligente de atendimento desenvolvido como desafio técnico, utilizando arquitetura multiagente para interpretar solicitações, consultar informações da Getnet e recuperar dados de clientes.
 
-A solução combina uma API REST desenvolvida com FastAPI, agentes especializados orquestrados pelo LangGraph, recuperação de conhecimento com RAG e uma interface web desenvolvida em React.
+A solução combina uma API REST desenvolvida com FastAPI, autenticação com JWT, agentes especializados orquestrados pelo LangGraph, recuperação de conhecimento com RAG, consulta de dados de clientes e uma interface web desenvolvida em React.
 
 ---
 
@@ -20,6 +20,9 @@ A aplicação disponibiliza:
 - Consulta de vendas e recebimentos.
 - Persistência de dados em SQLite.
 - Dashboard para acompanhamento das interações da sessão atual.
+- Autenticação de usuários com JWT e senhas protegidas com Argon2.
+- Proteção do endpoint de chat por token de acesso.
+- Monitoramento do consumo real de tokens informado pela API do Gemini, por interação e acumulado na sessão do navegador.
 
 ## 2. Arquitetura
 
@@ -28,8 +31,9 @@ O sistema utiliza três agentes principais:
 - **Router Agent:** identifica a intenção da mensagem e direciona a solicitação ao agente adequado.
 - **Knowledge Agent:** responde perguntas sobre produtos, serviços, soluções e funcionalidades da Getnet utilizando RAG e pesquisa externa.
 - **Customer Support Agent:** consulta informações de vendas e recebimentos dos clientes por meio de ferramentas Python.
+- **Human Handoff:** identifica solicitações de atendimento humano e retorna o estado de encaminhamento. Nesta versão, o fluxo é demonstrativo e não está conectado a uma fila real.
 
-A orquestração dos agentes é realizada pelo LangGraph.
+A orquestração dos agentes é realizada pelo LangGraph. O acesso à API é protegido por autenticação JWT.
 
 ### Fluxo de atendimento
 
@@ -37,18 +41,20 @@ A orquestração dos agentes é realizada pelo LangGraph.
 flowchart TD
     A[Usuário] --> B[Interface React]
     B --> C[API FastAPI]
-    C --> D{Solicitação de atendente?}
-    D -->|Sim| E[Human Handoff]
-    D -->|Não| F[Router Agent]
-    F --> G{Identificação da intenção}
-    G -->|Conhecimento| H[Knowledge Agent]
-    G -->|Suporte ao cliente| I[Customer Support Agent]
-    G -->|Não identificada| J[Fallback]
-    H --> K[Resposta]
-    I --> K
-    E --> K
-    J --> K
-    K --> C
+    C --> D{Token JWT válido?}
+    D -->|Não| X[401 - Não autorizado]
+    D -->|Sim| E{Solicitação de atendente?}
+    E -->|Sim| F[Human Handoff]
+    E -->|Não| G[Router Agent]
+    G --> H{Identificação da intenção}
+    H -->|Conhecimento| I[Knowledge Agent]
+    H -->|Suporte ao cliente| J[Customer Support Agent]
+    H -->|Não identificada| K[Fallback]
+    I --> L[Resposta + uso de tokens]
+    J --> L
+    F --> L
+    K --> L
+    L --> C
     C --> B
 ```
 
@@ -65,6 +71,8 @@ flowchart TD
 - SQLite
 - SQLAlchemy
 - Pydantic
+- PyJWT
+- pwdlib com Argon2
 - Pytest
 
 ### Frontend
@@ -110,15 +118,24 @@ flowchart TD
 - Identificação do agente responsável pela resposta.
 - Exibição das ferramentas utilizadas.
 - Dashboard com indicadores das interações realizadas na sessão atual.
+- Indicadores de tokens de entrada, saída e total, com valores retornados pelos metadados de uso do Gemini.
+- Acumulação do consumo de tokens por interação durante a sessão atual do navegador.
 
-**Observação:** os indicadores do dashboard representam a sessão atual do navegador e não devem ser interpretados como um histórico consolidado de todas as interações armazenadas no banco de dados.
+**Observações:**
+- Os indicadores do dashboard representam a sessão atual do navegador e não devem ser interpretados como um histórico consolidado de todas as interações armazenadas no banco de dados.
+- O contador utiliza os metadados de uso retornados nas chamadas ao Gemini. A leitura desses metadados não exige uma chamada adicional ao modelo e, portanto, não gera consumo extra de tokens.
+- O contador não representa tokens utilizados por serviços externos, como Tavily, nem necessariamente o consumo de outros provedores.
 
 ### Segurança e validação
 
-- Validação de entradas.
+- Login com usuário e senha.
+- Senhas armazenadas com hash Argon2.
+- Geração e validação de tokens JWT.
+- Proteção do endpoint `/chat`, que exige um token válido.
+- Validação de entradas com Pydantic.
 - Tratamento de erros.
 - Guardrails para proteção do fluxo de atendimento.
-- Armazenamento de credenciais em variáveis de ambiente.
+- Armazenamento de segredos e credenciais em variáveis de ambiente.
 
 O encaminhamento humano identifica a intenção de transferência, mas ainda não está conectado a uma fila real de atendimento.
 
@@ -134,6 +151,7 @@ Desafio_IA/
 │   │   └── customer_support_agent.py
 │   │
 │   ├── api/
+│   │   ├── auth.py
 │   │   ├── routes.py
 │   │   └── schemas.py
 │   │
@@ -236,6 +254,10 @@ GEMINI_API_KEY=sua_chave_gemini
 GEMINI_MODEL=seu_modelo_gemini
 GEMINI_FILE_SEARCH_STORE_NAME=seu_store_name
 TAVILY_API_KEY=sua_chave_tavily
+
+JWT_SECRET_KEY=gere_uma_chave_forte_e_aleatoria
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=60
 ```
 
 Não compartilhe ou publique o arquivo `.env`.
@@ -390,29 +412,75 @@ A execução do frontend continua sendo realizada separadamente pelo Vite, confo
 
 ## 9. Endpoints da API
 
-| Método | Endpoint | Descrição |
-|---|---|---|
-| GET | `/health` | Verifica a saúde da aplicação |
-| POST | `/chat` | Envia uma mensagem para o sistema multiagente |
+| Método | Endpoint | Autenticação | Descrição |
+|---|---|---|---|
+| GET | `/health` | Não | Verifica a saúde da aplicação |
+| POST | `/auth/login` | Não | Valida as credenciais e retorna um JWT |
+| POST | `/chat` | Bearer Token | Envia uma mensagem para o sistema multiagente |
 
-### Exemplo de requisição
+### Autenticação
+
+Antes de utilizar o chat, o cliente deve autenticar-se por meio do endpoint `/auth/login`.
+
+**Requisição:**
+
+`POST http://localhost:8000/auth/login`
+
+```json
+{
+  "username": "user_001",
+  "password": "Getnet@2026-001"
+}
+```
+
+A resposta contém um token de acesso. O frontend armazena esse token durante a sessão e o envia no cabeçalho `Authorization` das requisições protegidas.
+
+**Exemplo de cabeçalho:**
+
+```http
+Authorization: Bearer SEU_TOKEN_JWT
+```
+
+### Usuários de demonstração
+
+O banco de dados é inicializado com cinco usuários de demonstração:
+
+| Usuário | Senha |
+|---|---|
+| `user_001` | `Getnet@2026-001` |
+| `user_002` | `Getnet@2026-002` |
+| `user_003` | `Getnet@2026-003` |
+| `user_004` | `Getnet@2026-004` |
+| `user_005` | `Getnet@2026-005` |
+
+Essas credenciais são destinadas exclusivamente ao ambiente demonstrativo. Não utilize senhas de demonstração em produção.
+
+### Envio de mensagem ao chat
 
 **Endpoint:**
 
 `POST http://localhost:8000/chat`
 
+**Cabeçalho:**
+
+```http
+Authorization: Bearer SEU_TOKEN_JWT
+Content-Type: application/json
+```
+
 **Corpo da requisição:**
 
 ```json
 {
-  "message": "Quais foram minhas vendas?",
-  "user_id": "user_001"
+  "message": "Quais foram minhas vendas?"
 }
 ```
 
-O sistema identifica a intenção, direciona a solicitação ao agente correspondente e retorna a resposta pela API.
+O identificador do cliente é obtido a partir do usuário autenticado no token. Não é necessário nem permitido enviar `user_id` no corpo da requisição.
 
-A resposta inclui informações como conteúdo da resposta, status, intenção identificada, agente responsável, ferramentas utilizadas, fontes e eventuais erros.
+O sistema identifica a intenção, direciona a solicitação ao agente correspondente e retorna a resposta pela API. A resposta inclui informações como conteúdo, status, intenção identificada, agente responsável, ferramentas utilizadas, fontes, eventuais erros e metadados de consumo de tokens do Gemini.
+
+Requisições ao endpoint `/chat` sem token ou com token inválido retornam `401 Unauthorized`.
 
 ## 10. Banco de dados
 
@@ -421,10 +489,11 @@ O projeto utiliza SQLite para armazenar dados de clientes, vendas e recebimentos
 As principais tabelas são:
 
 - Customers
+- Customer Credentials
 - Sales
 - Payouts
 
-O banco é inicializado automaticamente durante a inicialização da aplicação, incluindo os dados de demonstração.
+As credenciais dos usuários são armazenadas separadamente dos dados cadastrais, com senhas protegidas por hash Argon2. O banco é inicializado automaticamente durante a inicialização da aplicação, incluindo os dados de demonstração.
 
 ## 11. Testes
 
@@ -446,8 +515,11 @@ Os testes de integração utilizam mocks para validar o fluxo de orquestração 
 
 ## 12. Segurança e boas práticas
 
-- Credenciais armazenadas em variáveis de ambiente.
+- Segredos e credenciais de serviços externos armazenados em variáveis de ambiente.
 - Arquivo `.env` excluído do versionamento.
+- Senhas de usuários protegidas com Argon2.
+- Autenticação baseada em JWT e expiração configurável do token.
+- Endpoint `/chat` protegido por autenticação.
 - Validação de dados de entrada com Pydantic.
 - Tratamento de erros para evitar exposição de informações internas.
 - Persistência dos dados utilizando volume Docker.
@@ -493,6 +565,8 @@ Em um ambiente de produção, recomenda-se utilizar logs estruturados para acomp
 
 A partir desses registros, podem ser acompanhados indicadores como volume de interações, distribuição de intenções, frequência de acionamento de cada agente, taxa de sucesso das ferramentas, latência, quantidade de erros, ocorrências de fallback e solicitações de atendimento humano.
 
+A aplicação também apresenta, no dashboard do frontend, o consumo de tokens de entrada, saída e total informado pelo Gemini. Os valores são agregados no estado da sessão atual do navegador; não constituem um relatório histórico persistido no banco de dados.
+
 Também é recomendável acompanhar a disponibilidade da API e dos serviços externos utilizados, além de configurar alertas para falhas recorrentes ou aumento anormal do tempo de resposta.
 
 ### Escopo atual e evolução
@@ -501,7 +575,20 @@ O projeto já conta com testes automatizados, validações, guardrails e tratame
 
 Os critérios, indicadores e práticas descritos nesta seção representam uma estratégia de avaliação e observabilidade para orientar a evolução e a operação do sistema em um ambiente real.
 
-## 14. Considerações finais
+## 14. Consumo de tokens
+
+O backend coleta os metadados de utilização disponibilizados nas respostas da API do Gemini e consolida os valores associados às etapas do fluxo multiagente, incluindo o roteamento e as chamadas dos agentes.
+
+O retorno do endpoint `/chat` pode incluir o objeto `token_usage`, com os totais de tokens de entrada, saída e consumo total da interação. O frontend utiliza esses dados para atualizar os indicadores do dashboard e apresentar o consumo por mensagem.
+
+**Pontos importantes:**
+- Os números são baseados nos metadados de uso fornecidos pelo Gemini, e não em estimativas feitas pelo frontend.
+- A leitura dos metadados não realiza uma chamada adicional ao modelo.
+- Chamadas a serviços externos, como Tavily Search, não entram na contagem de tokens do Gemini.
+- Os totais exibidos no dashboard são acumulados na sessão atual do navegador e não são persistidos como histórico de consumo no SQLite.
+- Se uma resposta não disponibilizar metadados de uso, os valores correspondentes podem aparecer como zero.
+
+## 15. Considerações finais
 
 O Getnet Multi-Agent Support System demonstra a aplicação de arquitetura multiagente em um cenário de atendimento, combinando classificação de intenções, recuperação de conhecimento, ferramentas de consulta de dados e exposição de funcionalidades por meio de uma API REST.
 

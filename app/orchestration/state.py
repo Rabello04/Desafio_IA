@@ -1,5 +1,10 @@
-
 from typing import TypedDict
+
+
+class TokenUsage(TypedDict, total=False):
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
 
 
 class AgentState(TypedDict, total=False):
@@ -16,6 +21,9 @@ class AgentState(TypedDict, total=False):
     context: str
     sources: list[str]
     tools_used: list[str]
+
+    # Consumo acumulado de tokens nesta interação
+    token_usage: TokenUsage
 
     # Resposta final
     response: str

@@ -9,6 +9,25 @@ from app.tools.sales import get_sales
 from app.tools.payouts import get_payout_date
 
 
+def extract_token_usage(response) -> dict:
+    """Lê os tokens informados pela própria resposta do Gemini."""
+    usage = getattr(response, "usage_metadata", None)
+    if usage is None:
+        return {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
+    input_tokens = int(getattr(usage, "prompt_token_count", 0) or 0)
+    output_tokens = int(getattr(usage, "candidates_token_count", 0) or 0)
+    total_tokens = int(
+        getattr(usage, "total_token_count", 0)
+        or (input_tokens + output_tokens)
+    )
+    return {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+    }
+
+
 class CustomerSupportAgent:
     def __init__(self):
         if not settings.GEMINI_API_KEY:
@@ -63,6 +82,8 @@ class CustomerSupportAgent:
                 "sources": [],
             }
 
+        token_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
         try:
             tool = types.Tool(
                 function_declarations=self.tool_declarations
@@ -80,6 +101,8 @@ class CustomerSupportAgent:
                     tools=[tool],
                 ),
             )
+
+            token_usage = extract_token_usage(response)
 
             if not response.candidates:
                 raise RuntimeError(
@@ -102,6 +125,7 @@ class CustomerSupportAgent:
                     "status": "success",
                     "tools_used": [],
                     "sources": [],
+                    "token_usage": token_usage,
                 }
 
             function_responses = []
@@ -145,6 +169,13 @@ class CustomerSupportAgent:
                 ),
             )
 
+            final_usage = extract_token_usage(final_response)
+            token_usage = {
+                "input_tokens": token_usage["input_tokens"] + final_usage["input_tokens"],
+                "output_tokens": token_usage["output_tokens"] + final_usage["output_tokens"],
+                "total_tokens": token_usage["total_tokens"] + final_usage["total_tokens"],
+            }
+
             return {
                 "response": final_response.text or (
                     "Consultei as informações, mas não consegui "
@@ -153,6 +184,7 @@ class CustomerSupportAgent:
                 "status": "success",
                 "tools_used": list(dict.fromkeys(tools_used)),
                 "sources": [],
+                "token_usage": token_usage,
             }
 
         except Exception as error:
@@ -164,5 +196,6 @@ class CustomerSupportAgent:
                 "status": "error",
                 "tools_used": [],
                 "sources": [],
+                "token_usage": token_usage,
                 "error": str(error),
             }

@@ -12,7 +12,10 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     DATABASE_URL: str = "sqlite:///./data/getnet.db"
-
+    # Autenticação JWT
+    JWT_SECRET_KEY: str = "chave-temporaria-apenas-para-desenvolvimento"
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     # Configurações antigas — manter durante a migração
     TAVILY_API_KEY: str = ""
     CHROMA_PERSIST_DIRECTORY: str = "./data/chroma"

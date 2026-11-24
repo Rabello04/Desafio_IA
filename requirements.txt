@@ -9,7 +9,9 @@ tavily-python
 requests
 beautifulsoup4
 python-dotenv
-
+# Autenticação e segurança
+pwdlib[argon2]
+PyJWT
 # Testes
 pytest
 httpx

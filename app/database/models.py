@@ -1,4 +1,3 @@
-
 from app.database.connection import get_connection
 
 
@@ -11,6 +10,13 @@ def create_tables():
         CREATE TABLE IF NOT EXISTS customers (
             user_id TEXT PRIMARY KEY,
             name TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS customer_credentials (
+            user_id TEXT PRIMARY KEY,
+            password_hash TEXT NOT NULL,
+            active INTEGER NOT NULL DEFAULT 1,
+            FOREIGN KEY (user_id) REFERENCES customers(user_id)
         );
 
         CREATE TABLE IF NOT EXISTS sales (

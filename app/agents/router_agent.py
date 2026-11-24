@@ -8,6 +8,25 @@ from pydantic import BaseModel, Field
 from app.config import settings
 
 
+def extract_token_usage(response) -> dict:
+    """Lê os tokens informados pela própria resposta do Gemini."""
+    usage = getattr(response, "usage_metadata", None)
+    if usage is None:
+        return {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
+    input_tokens = int(getattr(usage, "prompt_token_count", 0) or 0)
+    output_tokens = int(getattr(usage, "candidates_token_count", 0) or 0)
+    total_tokens = int(
+        getattr(usage, "total_token_count", 0)
+        or (input_tokens + output_tokens)
+    )
+    return {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+    }
+
+
 class RouterDecision(BaseModel):
     intent: Literal[
         "product_information",
@@ -15,6 +34,7 @@ class RouterDecision(BaseModel):
         "account_information",
         "technical_support",
         "general_information",
+        "external_information",
         "unknown",
     ]
 
@@ -36,9 +56,8 @@ e encaminhá-la ao agente adequado.
 Agentes disponíveis:
 
 1. knowledge:
-   Informações sobre produtos, serviços, pagamentos,
-   dúvidas gerais e suporte técnico da Getnet.
-   Também pode realizar pesquisas na web.
+   Responde perguntas sobre produtos, serviços, pagamentos,
+   informações gerais e dúvidas externas à Getnet.
 
 2. customer_support:
    Solicitações que dependem de informações individuais
@@ -54,16 +73,35 @@ Classifique a mensagem em uma destas intenções:
 - account_information
 - technical_support
 - general_information
+- external_information
 - unknown
 
-Regras importantes:
+Regras de classificação:
 
-- Perguntas gerais sobre contas e recebimentos vão para knowledge.
-- Consultas sobre dados específicos de um cliente vão para
-  customer_support.
-- Problemas técnicos com produtos Getnet vão para knowledge.
-- Perguntas sobre informações atuais, como câmbio e clima,
-  vão para knowledge.
+- Perguntas sobre produtos, serviços, taxas e soluções Getnet:
+  product_information.
+
+- Perguntas gerais sobre pagamentos e recebimentos Getnet:
+  payment_information.
+
+- Consultas sobre dados específicos de um cliente:
+  account_information, encaminhando para customer_support.
+
+- Problemas técnicos relacionados aos produtos Getnet:
+  technical_support.
+
+- Perguntas que dependem de informações atuais, como câmbio,
+  clima, notícias ou dados recentes:
+  general_information, encaminhando para knowledge.
+
+- Perguntas externas e de conhecimento geral que não dependem
+  de informações atuais, como receitas, curiosidades, conceitos,
+  cálculos e conhecimentos cotidianos:
+  external_information, encaminhando para knowledge.
+
+- Não classifique perguntas externas como assuntos da Getnet
+  apenas porque foram feitas dentro deste sistema.
+
 - Não invente informações.
 - Se não conseguir identificar a intenção, use unknown
   e encaminhe para fallback.
@@ -89,6 +127,11 @@ class RouterAgent:
         )
 
         self.model = settings.GEMINI_MODEL
+        self.last_token_usage = {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+        }
 
     def route(self, message: str) -> RouterDecision:
 
@@ -104,6 +147,8 @@ class RouterAgent:
                 temperature=0,
             ),
         )
+
+        self.last_token_usage = extract_token_usage(response)
 
         if response.parsed is not None:
             return response.parsed
